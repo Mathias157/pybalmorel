@@ -225,7 +225,7 @@ def is_wind_tech_enabled(run_folder: str, tech: str, config: WeatherYearConfig) 
     Returns:
         A boolean indicating whether the technology should be read (True) or skipped (False).
         """
-    turbine_to_keep = [turbine.replace("-", "_").replace("HH", "") for turbine in config.turbine_to_keep]
+    turbine_to_keep = [turbine.replace("-", "_") for turbine in config.turbine_to_keep]
 
     if Path(run_folder).name not in config.tech_to_keep:
         return False
@@ -246,8 +246,11 @@ def is_solar_tech_enabled(run_folder: str, tech: str, config: WeatherYearConfig)
     Returns:
         A boolean indicating whether the technology should be read (True) or skipped (False).
     """
+    if Path(run_folder).name not in config.tech_to_keep:
+        return False
+
     found_rg = next((rg for rg in config.rg_to_keep[Path(run_folder).name] if fnmatch.fnmatch(str(tech), f"*{rg}*")), None)
-    return Path(run_folder).name in config.tech_to_keep and bool(found_rg)
+    return bool(found_rg)
 
 
 def export_timeseries_to_xlsx(

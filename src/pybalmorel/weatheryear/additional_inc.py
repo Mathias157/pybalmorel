@@ -512,11 +512,21 @@ def create_additional_inc(
     contents = os.listdir(output_folder)
     wind_criteria = {'Offshore', 'Onshore',"Existing"}
     solar_criteria = {'PV'}
-    
-    
+
+
     techs=dict()
-    techs["wind"] = {tech for tech in contents if any(criterion in tech for criterion in wind_criteria)}
-    techs["solar"] = {tech for tech in contents if any(criterion in tech for criterion in solar_criteria)}
+    # Folders left over on disk from a previous run/config (e.g. a stale
+    # PV_Rooftop directory) must not be processed just because they exist -
+    # only technologies still enabled in tech_to_keep have RGs_to_keep
+    # entries, and config.rgs_for() below raises for anything else.
+    techs["wind"] = {
+        tech for tech in contents
+        if any(criterion in tech for criterion in wind_criteria) and tech in config.tech_to_keep
+    }
+    techs["solar"] = {
+        tech for tech in contents
+        if any(criterion in tech for criterion in solar_criteria) and tech in config.tech_to_keep
+    }
     
     
     onshore_criteria = {'SP335-HH100', 'SP335-HH150','SP335-HH200','SP277-HH100',"SP277-HH150","SP277-HH200","SP199-HH100","SP199-HH150","SP199-HH200"}

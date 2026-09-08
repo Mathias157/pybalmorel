@@ -59,7 +59,11 @@ def format_wind_column_names_for_balmorel(df: pd.DataFrame, tech_csv: str, onoff
     else:
         parts = tech_csv.split('_', 3)
         rg_dict = {"RGA": "RG1", "RGB": "RG2", "RGC": "RG3"}
-        tech = parts[0] + "-HH" + parts[1]
+        # parts[1] is already e.g. "HH155" (from the "SP316_HH155_RGB" folder
+        # name), so prepending another "HH" here produced "SP316-HHHH155",
+        # which doesn't match the "SP316-HH155" turbine_to_keep spelling used
+        # to build AAA/GDATA/GKFX area names in additional_inc.py.
+        tech = parts[0] + "-" + parts[1]
         rg = rg_dict[parts[2]]
         if onoff == "Onshore":
             onoff_suf = "_VRE-ONS"

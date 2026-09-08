@@ -412,6 +412,7 @@ class AdditionalIncConfig:
     regions_to_keep: RegionsConfig
     rg_to_keep: dict[str, list[str]]
     turbine_to_keep: list[str]
+    tech_to_keep: list[str]
     annuitycg_calculation: AnnuityCalculationConfig
     vre_potentials: str
     vre_tech_costs: str
@@ -426,6 +427,7 @@ class AdditionalIncConfig:
                 "Regions_to_keep",
                 "RGs_to_keep",
                 "turbine_to_keep",
+                "tech_to_keep",
                 "ANNUITYCG_calculation",
                 "VRE_potentials",
                 "VRE_tech_costs",
@@ -438,6 +440,7 @@ class AdditionalIncConfig:
             regions_to_keep=raw["Regions_to_keep"],
             rg_to_keep=raw["RGs_to_keep"],
             turbine_to_keep=raw["turbine_to_keep"],
+            tech_to_keep=raw["tech_to_keep"],
             annuitycg_calculation=raw["ANNUITYCG_calculation"],
             vre_potentials=raw["VRE_potentials"],
             vre_tech_costs=raw["VRE_tech_costs"],
