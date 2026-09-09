@@ -14,6 +14,15 @@ import pandas as pd
 
 from .to_inc import create_GKFX_inc
 
+
+def _drop_unnamed_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Drop pandas's synthesized "Unnamed: N" columns (from blank-header cells
+    in a hand-maintained source spreadsheet), which would otherwise ride
+    through unchanged into a GAMS TABLE header - ":" and spaces make them
+    invalid GAMS element names the model can't parse."""
+    return df.loc[:, ~df.columns.astype(str).str.startswith("Unnamed:")]
+
+
 def build_GKFX(
     rrraaa_renewable_df: pd.DataFrame,
     config: dict,
@@ -38,7 +47,9 @@ def build_GKFX(
     )
     rrraaa_renewable_df = rrraaa_renewable_df[["Region", "Areas", "RG"]]
 
-    existing_wind_cap = pd.read_excel(config["Existing_wind_cap"])
+    # Existing_wind_capacities.xlsx has trailing blank-header columns (all-NaN)
+    # that pandas would otherwise name "Unnamed: N" - see _drop_unnamed_columns.
+    existing_wind_cap = _drop_unnamed_columns(pd.read_excel(config["Existing_wind_cap"]))
 
     wind_dfs = []
     for wind_type in ["Onshore", "Offshore"]:

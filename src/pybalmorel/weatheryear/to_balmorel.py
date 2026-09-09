@@ -19,8 +19,9 @@ from .auxiliary_functions import (
     create_balmorel_time_mapping,
     parse_technology_folder_name,
 )
-from .config_models import ToBalmorelConfig
-from .exceptions import EmptyMergeResultError, MissingRequiredColumnsError
+from .config_models import ToBalmorelConfig, WeatherYearConfig
+from .corres_to_energy_system_model import is_solar_tech_enabled, is_wind_tech_enabled
+from .exceptions import EmptyMergeResultError, MalformedTechnologyFolderError, MissingRequiredColumnsError
 
 
 def add_WND_VAR_T_Existing_RG2_RG3(combined_scaled_dfs):
@@ -141,12 +142,27 @@ def load_full_load_hours_data(folder: str, output_folder: str, scaled_raw_ts: st
     return df_cf
 
 
-def combine_technology_timeseries_files(folder: str, output_folder: str, scaled_raw_ts: str) -> pd.DataFrame:
+def combine_technology_timeseries_files(
+    folder: str, output_folder: str, scaled_raw_ts: str, config: WeatherYearConfig
+) -> pd.DataFrame:
     tech_csvs = os.listdir(os.path.join(output_folder, folder, scaled_raw_ts))
     onoff, source = parse_technology_folder_name(folder)
+
+    # Files written under a previous turbine_to_keep/tech_to_keep are never deleted
+    # (export_timeseries_to_xlsx only ever adds/overwrites the currently-enabled
+    # turbines' files), so os.listdir() here can return stale per-turbine files left
+    # over from an earlier config. Re-apply the same enablement check used when those
+    # files were written, so a turbine excluded by the current config can't leak back
+    # in just because its file still exists on disk.
+    if source == "wind":
+        tech_csvs = [f for f in tech_csvs if is_wind_tech_enabled(folder, f, config)]
+    elif source == "solar":
+        tech_csvs = [f for f in tech_csvs if is_solar_tech_enabled(folder, f, config)]
+
     if not tech_csvs:
         raise EmptyMergeResultError(
-            f"No time-series files found in '{os.path.join(output_folder, folder, scaled_raw_ts)}'."
+            f"No time-series files found in '{os.path.join(output_folder, folder, scaled_raw_ts)}' "
+            "for technologies currently enabled by turbine_to_keep/tech_to_keep."
         )
 
     dfs: list[pd.DataFrame] = []
@@ -217,6 +233,7 @@ def export_timeseries_to_balmorel_format(config_fn: str, start_date: str, output
 
     # Load the configuration for the export process from the specified file.
     balmorel_config = ToBalmorelConfig.from_file(config_fn)
+    weatheryear_config = WeatherYearConfig.from_file(config_fn)
 
     # Create the necessary output directories for the Balmorel .inc files, organized by date and category (DA, CapDev).
     year_output_folder = os.path.join(output_folder, str(start_date))
@@ -229,13 +246,33 @@ def export_timeseries_to_balmorel_format(config_fn: str, start_date: str, output
     wind_criteria = {"Offshore", "Onshore", "Existing"}
     solar_criteria = {"PV"}
 
+    def _select_technology_folders(criteria: set[str]) -> set[str]:
+        """Pick tech_to_keep-enabled folders matching criteria; e.g. a stale
+        PV_Rooftop folder left over from an earlier config is dropped silently
+        (it's a known category, just not a currently-enabled one), but a folder
+        that looks like a VRE technology folder yet matches no known pattern at
+        all raises immediately instead of being silently skipped alongside it."""
+        selected = set()
+        for folder_name in year_folder_contents:
+            if not any(criterion in folder_name for criterion in criteria):
+                continue
+            try:
+                parse_technology_folder_name(folder_name)
+            except MalformedTechnologyFolderError:
+                raise MalformedTechnologyFolderError(
+                    f"'{folder_name}' looks like a VRE technology folder (matches "
+                    f"{criteria}) but matches no known technology pattern. This usually "
+                    "means CorRES started producing a technology this pipeline doesn't "
+                    "know about yet - add it to parse_technology_folder_name's folder_map "
+                    "and to config/weatheryear.yml's tech_to_keep if it should be modelled."
+                ) from None
+            if folder_name in weatheryear_config.tech_to_keep:
+                selected.add(folder_name)
+        return selected
+
     technology_folders_by_source = {}
-    technology_folders_by_source["wind"] = {
-        folder_name for folder_name in year_folder_contents if any(criteria in folder_name for criteria in wind_criteria)
-    }
-    technology_folders_by_source["solar"] = {
-        folder_name for folder_name in year_folder_contents if any(criteria in folder_name for criteria in solar_criteria)
-    }
+    technology_folders_by_source["wind"] = _select_technology_folders(wind_criteria)
+    technology_folders_by_source["solar"] = _select_technology_folders(solar_criteria)
 
     exported_timeseries_by_source = {}
     exported_flh_by_source = {}
@@ -259,7 +296,9 @@ def export_timeseries_to_balmorel_format(config_fn: str, start_date: str, output
             technology_dfs = []
             for technology_folder in technology_folders_by_source[source_name]:
                 technology_dfs.append(
-                    combine_technology_timeseries_files(technology_folder, year_output_folder, series_variant)
+                    combine_technology_timeseries_files(
+                        technology_folder, year_output_folder, series_variant, weatheryear_config
+                    )
                 )
 
             combined_timeseries_df = pd.concat(technology_dfs, axis=1)

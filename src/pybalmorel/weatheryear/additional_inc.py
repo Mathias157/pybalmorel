@@ -12,13 +12,73 @@ import numpy as np
 import os 
 import pandas as pd
 
+from .auxiliary_functions import parse_technology_folder_name
 from .config_models import AdditionalIncConfig
+from .exceptions import MalformedTechnologyFolderError
 from .to_inc import build_inc_file_list_type, create_Table_inc
 from .get_GDATA_func import build_GDATA
 from .get_GKFX_func import build_GKFX
 
 # Investment years used in Balmorel generator set names
 INVESTMENT_YEARS = ["_Y-2020", "_Y-2030", "_Y-2040", "_Y-2050"]
+
+# Per-category name templates shared by build_GGG / build_INVDATASET / build_AAA
+# for the "Future_*" wind and PV categories (the ones with a turbine/RG
+# dimension). GGG_renewable, INVDATASET_renewable, and AAA_renewable are
+# different Balmorel set domains and are meant to keep their own distinct
+# spellings - but each spelling for a given category used to be hand-typed
+# independently in each builder function, which already caused one real
+# spelling divergence (see to_balmorel.py's format_wind_column_names_for_balmorel
+# comment). Keeping each category's three templates together here means the
+# (turbine, rg) identity feeding all three can't drift apart again (see ADR 0003).
+# "Existing" wind/PV has no turbine dimension and is small/fixed, so it's left
+# as plain literals in each builder rather than templated here.
+_WIND_TEMPLATES = {
+    "Future_Onshore": {
+        "ggg": "GNR_WT-{tur}_ONS_{rg}{year}",
+        "invdataset": "VRE-ONS_{tur}_{rg}",
+        "aaa": "{region}_VRE-ONS_{tur}_{rg}",
+    },
+    "Future_Offshore_bottom_fixed": {
+        "ggg": "GNR_WT-{tur}_OFF_bottom_fixed_{rg}{year}",
+        "invdataset": "VRE-OFF_bottom_fixed_{tur}_{rg}",
+        "aaa": "{region}_VRE-OFF_bottom_fixed_{tur}_{rg}",
+    },
+    "Future_Offshore_floating": {
+        "ggg": "GNR_WT-{tur}_OFF_floating_{rg}{year}",
+        "invdataset": "VRE-OFF_floating_{tur}_{rg}",
+        "aaa": "{region}_VRE-OFF_floating_{tur}_{rg}",
+    },
+}
+
+_SOLAR_TEMPLATES = {
+    "PV_Rooftop": {
+        "ggg": "GNR_PV-Rooftop_{rg}{year}",
+        "ggg_existing": "GNR_PV-Rooftop_{rg}_Existing",
+        "invdataset": "PV_Rooftop_{rg}",
+        "aaa": "{region}_VRE-PV_Rooftop_{rg}",
+    },
+    "PV_Utility_scale_no_tracking": {
+        "ggg": "GNR_PV-Utility_scale_no_tracking_{rg}{year}",
+        "ggg_existing": "GNR_PV-Utility_scale_no_tracking_{rg}_Existing",
+        "invdataset": "PV_Utility_scale_no_tracking_{rg}",
+        "aaa": "{region}_VRE-PV_Utility_scale_no_tracking_{rg}",
+    },
+    "PV_Utility_scale_tracking": {
+        "ggg": "GNR_PV-Utility_scale_tracking_{rg}{year}",
+        "ggg_existing": "GNR_PV-Utility_scale_tracking_{rg}_Existing",
+        "invdataset": "PV_Utility_scale_tracking_{rg}",
+        "aaa": "{region}_VRE-PV_Utility_scale_tracking_{rg}",
+    },
+}
+
+
+def _template_for(tech: str, templates: dict) -> dict:
+    """Look up the (ggg, invdataset, aaa) name templates for a technology category."""
+    for key, template in templates.items():
+        if key in tech:
+            return template
+    raise KeyError(f"No naming template registered for technology: {tech}")
 
 
 def _convert_corres_rg_to_balmorel(rg: str) -> str:
@@ -45,39 +105,24 @@ def build_INVDATASET(
                     #AAA_renwable.append(region + "_ONS_Exisiting")
                 
         elif "Future_Onshore" in tech:
+            template = _template_for(tech, _WIND_TEMPLATES)["invdataset"]
             for tur in turbines["onshore"]:
                 for rg in config.rgs_for(tech):
                     rg = _convert_corres_rg_to_balmorel(rg)
-                    INVDATASET_renewables.append("VRE-ONS_" + tur + "_" + rg)
-        
-        elif "Future_Offshore_bottom_fixed" in tech:
+                    INVDATASET_renewables.append(template.format(tur=tur, rg=rg))
+
+        elif "Future_Offshore_bottom_fixed" in tech or "Future_Offshore_floating" in tech:
+            template = _template_for(tech, _WIND_TEMPLATES)["invdataset"]
             for tur in turbines["offshore"]:
                 for rg in config.rgs_for(tech):
                     rg = _convert_corres_rg_to_balmorel(rg)
-                    INVDATASET_renewables.append("VRE-OFF_bottom_fixed_" + tur + "_" + rg)
-            
-        elif "Future_Offshore_floating" in tech:
-            for tur in turbines["offshore"]:
-                for rg in config.rgs_for(tech):
-                    rg = _convert_corres_rg_to_balmorel(rg)
-                    INVDATASET_renewables.append("VRE-OFF_floating_" + tur + "_" + rg)
-        
+                    INVDATASET_renewables.append(template.format(tur=tur, rg=rg))
+
     for tech in techs["solar"] :
-            
-        if "PV_Rooftop" in tech:
-            for rg in config.rgs_for(tech):
-                rg = _convert_corres_rg_to_balmorel(rg)
-                INVDATASET_renewables.append("PV_Rooftop_" + rg )
-                
-        elif "PV_Utility_scale_no_tracking" in tech:
-            for rg in config.rgs_for(tech):
-                rg = _convert_corres_rg_to_balmorel(rg)
-                INVDATASET_renewables.append("PV_Utility_scale_no_tracking_" + rg )
-        
-        elif "PV_Utility_scale_tracking" in tech:
-            for rg in config.rgs_for(tech):
-                rg = _convert_corres_rg_to_balmorel(rg)
-                INVDATASET_renewables.append("PV_Utility_scale_tracking_" + rg )   
+        template = _template_for(tech, _SOLAR_TEMPLATES)["invdataset"]
+        for rg in config.rgs_for(tech):
+            rg = _convert_corres_rg_to_balmorel(rg)
+            INVDATASET_renewables.append(template.format(rg=rg))
     
     INVDATASET_renewables_df=pd.DataFrame()
     INVDATASET_renewables_df["INVDATASET_renewables"]=INVDATASET_renewables
@@ -93,12 +138,13 @@ def build_INVDATA_renewable(
 ) -> pd.DataFrame:
     INVDATA=[]
     for iter1 in INVDATASET_renewables_df["INVDATASET_renewables"]:
-            if "SP" in iter1:
-                check_str=iter1.replace("ONSVRE_","").replace("OFFSVRE_","")
-            else:
-                check_str=iter1
-            
-            df=AAA_renewable_df[AAA_renewable_df['AAA_renewable'].str.contains(check_str, regex=True)]
+            # build_AAA's templates always nest the INVDATASET_renewable string
+            # directly inside the AAA_renewable name (region + "_" + this string
+            # for wind, region + "_VRE-" + this string for solar - see ADR 0003),
+            # so a plain literal containment check is exact; no extra
+            # normalization of iter1 is needed (a prior "ONSVRE_"/"OFFSVRE_"
+            # strip here was dead code - those substrings never occur).
+            df=AAA_renewable_df[AAA_renewable_df['AAA_renewable'].str.contains(iter1, regex=False)]
             for area in df["AAA_renewable"]:
                 INVDATA.append( "INVDATA('" + area + "','" + iter1 + "')=1 ;"   )
     
@@ -124,47 +170,27 @@ def build_GGG(
             GGG_renewable.append("GNR_WT_WIND_OFF_Existing_RG2")
             GGG_renewable.append("GNR_WT_WIND_OFF_Existing_RG3")
         elif  "Future_Onshore" in tech:
+            template = _template_for(tech, _WIND_TEMPLATES)["ggg"]
             for tur in turbines["onshore"]:
                 for rg in config.rgs_for(tech):
                     rg = _convert_corres_rg_to_balmorel(rg)
                     for year in INVESTMENT_YEARS:
-                        GGG_renewable.append( "GNR_WT-" + tur + "_ONS_" + rg + year)
-        elif  "Future_Offshore_bottom_fixed" in tech:
+                        GGG_renewable.append(template.format(tur=tur, rg=rg, year=year))
+        elif  "Future_Offshore_bottom_fixed" in tech or "Future_Offshore_floating" in tech:
+            template = _template_for(tech, _WIND_TEMPLATES)["ggg"]
             for tur in turbines["offshore"]:
                 for rg in config.rgs_for(tech):
                     rg = _convert_corres_rg_to_balmorel(rg)
                     for year in INVESTMENT_YEARS:
-                        GGG_renewable.append( "GNR_WT-" + tur + "_OFF_bottom_fixed_" + rg + year)
-    
-        elif  "Future_Offshore_floating" in tech:
-            for tur in turbines["offshore"]:
-                for rg in config.rgs_for(tech):
-                    rg = _convert_corres_rg_to_balmorel(rg)
-                    for year in INVESTMENT_YEARS:
-                        GGG_renewable.append( "GNR_WT-" + tur + "_OFF_floating_" + rg + year)
-    
+                        GGG_renewable.append(template.format(tur=tur, rg=rg, year=year))
+
     for tech in techs["solar"] :
-        
-        
-        if  "PV_Rooftop" in tech:
-            for rg in config.rgs_for(tech):
-                rg = _convert_corres_rg_to_balmorel(rg)
-                for year in INVESTMENT_YEARS:
-                    GGG_renewable.append( "GNR_PV-" + "Rooftop_" + rg + year)
-                GGG_renewable.append( "GNR_PV-" + "Rooftop_" + rg + "_Existing")
-        elif  "PV_Utility_scale_no_tracking" in tech:
-            for rg in config.rgs_for(tech):
-                rg = _convert_corres_rg_to_balmorel(rg)
-                for year in INVESTMENT_YEARS:
-                    GGG_renewable.append( "GNR_PV-" + "Utility_scale_no_tracking_" + rg + year)     
-                GGG_renewable.append( "GNR_PV-" + "Utility_scale_no_tracking_" + rg + "_Existing")
-                
-        elif  "PV_Utility_scale_tracking" in tech:
-            for rg in config.rgs_for(tech):
-                rg = _convert_corres_rg_to_balmorel(rg)
-                for year in INVESTMENT_YEARS:
-                    GGG_renewable.append( "GNR_PV-" + "Utility_scale_tracking_" + rg + year)   
-                GGG_renewable.append( "GNR_PV-" + "Utility_scale_tracking_" + rg + "_Existing")
+        templates = _template_for(tech, _SOLAR_TEMPLATES)
+        for rg in config.rgs_for(tech):
+            rg = _convert_corres_rg_to_balmorel(rg)
+            for year in INVESTMENT_YEARS:
+                GGG_renewable.append(templates["ggg"].format(rg=rg, year=year))
+            GGG_renewable.append(templates["ggg_existing"].format(rg=rg))
     
     GGG_renewable_df=pd.DataFrame()
     GGG_renewable_df["GGG_renewable"]=GGG_renewable
@@ -240,27 +266,17 @@ def build_AAA(
                 #AAA_renwable.append(region + "_ONS_Exisiting")
             
             elif "Future_Onshore" in tech:
+                template = _template_for(tech, _WIND_TEMPLATES)["aaa"]
                 for tur in turbines["onshore"]:
                     for rg in config.rgs_for(tech):
                         rg = _convert_corres_rg_to_balmorel(rg)
-                        AAA_renwable.append(region + "_VRE-ONS_" + tur + "_" + rg)
-    
+                        AAA_renwable.append(template.format(region=region, tur=tur, rg=rg))
+
         for tech in techs["solar"] :
-                
-            if "PV_Rooftop" in tech:
-                for rg in config.rgs_for(tech):
-                    rg = _convert_corres_rg_to_balmorel(rg)
-                    AAA_renwable.append(region + "_VRE-PV_Rooftop_" + rg )
-                    
-            elif "PV_Utility_scale_no_tracking" in tech:
-                for rg in config.rgs_for(tech):
-                    rg = _convert_corres_rg_to_balmorel(rg)
-                    AAA_renwable.append(region + "_VRE-PV_Utility_scale_no_tracking_" + rg )
-            
-            elif "PV_Utility_scale_tracking" in tech:
-                for rg in config.rgs_for(tech):
-                    rg = _convert_corres_rg_to_balmorel(rg)
-                    AAA_renwable.append(region + "_VRE-PV_Utility_scale_tracking_" + rg )   
+            template = _template_for(tech, _SOLAR_TEMPLATES)["aaa"]
+            for rg in config.rgs_for(tech):
+                rg = _convert_corres_rg_to_balmorel(rg)
+                AAA_renwable.append(template.format(region=region, rg=rg))
 
     for region in config.regions_to_keep.offshore:
         for tech in techs["wind"] :
@@ -271,17 +287,12 @@ def build_AAA(
                 AAA_renwable.append(region + "_OFF_Existing_RG3")
 
             
-            elif "Future_Offshore_bottom_fixed" in tech:
+            elif "Future_Offshore_bottom_fixed" in tech or "Future_Offshore_floating" in tech:
+                template = _template_for(tech, _WIND_TEMPLATES)["aaa"]
                 for tur in turbines["offshore"]:
                     for rg in config.rgs_for(tech):
                         rg = _convert_corres_rg_to_balmorel(rg)
-                        AAA_renwable.append(region + "_VRE-OFF_bottom_fixed_" + tur + "_" + rg)
-        
-            elif "Future_Offshore_floating" in tech:
-                for tur in turbines["offshore"]:
-                    for rg in config.rgs_for(tech):
-                        rg = _convert_corres_rg_to_balmorel(rg)
-                        AAA_renwable.append(region + "_VRE-OFF_floating_" + tur + "_" + rg)
+                        AAA_renwable.append(template.format(region=region, tur=tur, rg=rg))
 
     AAA_ren_df=pd.DataFrame()
     AAA_ren_df["AAA_renewable"]=AAA_renwable
@@ -513,20 +524,31 @@ def create_additional_inc(
     wind_criteria = {'Offshore', 'Onshore',"Existing"}
     solar_criteria = {'PV'}
 
+    def _select_techs(criteria: set[str]) -> set[str]:
+        # Folders left over on disk from a previous run/config (e.g. a stale
+        # PV_Rooftop directory) must not be processed just because they exist -
+        # a known-but-currently-excluded category is dropped silently, but a
+        # folder that looks like a VRE technology folder yet matches no known
+        # technology pattern at all raises immediately instead (see ADR 0004).
+        selected = set()
+        for tech in contents:
+            if not any(criterion in tech for criterion in criteria):
+                continue
+            try:
+                parse_technology_folder_name(tech)
+            except MalformedTechnologyFolderError:
+                raise MalformedTechnologyFolderError(
+                    f"'{tech}' looks like a VRE technology folder (matches {criteria}) "
+                    "but matches no known technology pattern. This usually means CorRES "
+                    "started producing a technology this pipeline doesn't know about yet."
+                ) from None
+            if tech in config.tech_to_keep:
+                selected.add(tech)
+        return selected
 
     techs=dict()
-    # Folders left over on disk from a previous run/config (e.g. a stale
-    # PV_Rooftop directory) must not be processed just because they exist -
-    # only technologies still enabled in tech_to_keep have RGs_to_keep
-    # entries, and config.rgs_for() below raises for anything else.
-    techs["wind"] = {
-        tech for tech in contents
-        if any(criterion in tech for criterion in wind_criteria) and tech in config.tech_to_keep
-    }
-    techs["solar"] = {
-        tech for tech in contents
-        if any(criterion in tech for criterion in solar_criteria) and tech in config.tech_to_keep
-    }
+    techs["wind"] = _select_techs(wind_criteria)
+    techs["solar"] = _select_techs(solar_criteria)
     
     
     onshore_criteria = {'SP335-HH100', 'SP335-HH150','SP335-HH200','SP277-HH100',"SP277-HH150","SP277-HH200","SP199-HH100","SP199-HH150","SP199-HH200"}
