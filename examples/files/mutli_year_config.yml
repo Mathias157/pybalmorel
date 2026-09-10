@@ -12,11 +12,6 @@ turbine_to_keep:
   - SP316-HH155
   
 
-PV_to_keep:
-  - PV_Rooftop
-  - PV_Utility_scale_no_tracking
-  - PV_Utility_scale_tracking
-
 RGs_to_keep:
   Future_Onshore:  [ RGA, RGB, RGC,]
   Future_Offshore_bottom_fixed: [ RGB]

@@ -46,7 +46,6 @@ def to_balmorel_timeseries_assignment_lines(
         DataFrame with a single column (symbol) containing GAMS assignment strings.
     """
     output = []
-    
     for idx in df.index:
         if "_S" in symbol:
             sss=idx
@@ -82,12 +81,12 @@ def to_balmorel_factor_assignment_lines(
         DataFrame with a single column (symbol) containing GAMS assignment strings.
     """
     output = []
-
     for region in series.index:
         value = series.loc[region]
         if user_name:
-            # Annual correction format: multiply existing value
             assignment = f"{symbol}( YYY, '{region}', '{user_name}') = {symbol}( YYY, '{region}', '{user_name}')*{value};"
+        elif (symbol=="WTRRSFLH") or (symbol=="WTRRRFLH"):
+            assignment = f"{symbol}('{region}') = {value} * {symbol}('{region}') ;"
         else:
             # FLH factor format: direct assignment
             assignment = f"{symbol}('{region}') = {value};"

@@ -126,12 +126,12 @@ def _apply_multiweather_defaults(raw: dict[str, Any]) -> dict[str, Any]:
     if "corres_results" not in enriched:
         enriched["corres_results"] = _build_default_corres_results(_default_corres_root(weatheryear_root))
 
-    if "tech_to_keep" not in enriched:
-        enriched["tech_to_keep"] = sorted({
-            os.path.basename(os.path.normpath(folder))
-            for source_folders in enriched["corres_results"].values()
-            for folder in source_folders
-        })
+    #if "tech_to_keep" not in enriched:
+    #    enriched["tech_to_keep"] = sorted({
+    #        os.path.basename(os.path.normpath(folder))
+    #        for source_folders in enriched["corres_results"].values()
+    #        for folder in source_folders
+    #     })
 
     return enriched
 
