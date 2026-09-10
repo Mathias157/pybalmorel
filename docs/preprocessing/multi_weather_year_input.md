@@ -51,6 +51,8 @@ RGs_to_keep:
   Future_Onshore: [RGA, RGB, RGC]
   Future_Offshore_bottom_fixed: [RGB]
   PV_Rooftop: [RGA, RGB, RGC]
+  
+If no resource grade is selected for a technology, that technology is excluded from the generated input files. Use an empty list (for example, `Future_Onshore: []`) to explicitly exclude it.
 
 # Geographic regions to include
 Regions_to_keep:
